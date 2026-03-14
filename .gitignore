@@ -21,6 +21,10 @@ saved_model/
 # Results
 results.csv
 
+# Generated train/test splits (created by `python main.py prepare`)
+data/train.csv
+data/test.csv
+
 # Jupyter notebooks checkpoints
 .ipynb_checkpoints/
 
