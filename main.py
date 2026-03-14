@@ -2,14 +2,25 @@
 main.py — Entry point for the CAR-Bert sentiment analysis system.
 
 Commands:
+    prepare  — Convert raw Excel data to train/test CSV files
     train    — Fine-tune BERT on labeled car exterior reviews
     predict  — Run inference on new reviews (requires a trained model)
+    evaluate — Run prediction on the held-out test set and show metrics
 
 Examples:
-    # Fine-tune on sample data
-    python main.py train
+    # Step 1: Prepare data from the uploaded Excel file
+    python main.py prepare
 
-    # Fine-tune on your own labeled data
+    # Step 1 (custom paths):
+    python main.py prepare --xlsx 满意以及不满意评论全部.xlsx --output-dir data/
+
+    # Step 2: Train using the prepared training set
+    python main.py train --data data/train.csv
+
+    # Step 3: Evaluate on the held-out test set
+    python main.py evaluate --data data/test.csv --output results.csv
+
+    # Fine-tune on your own labeled CSV (review + label columns)
     python main.py train --data /path/to/your/reviews.csv
 
     # Predict sentiment for a CSV of reviews
@@ -23,6 +34,7 @@ import argparse
 import sys
 
 import config
+from src.data_prep import DEFAULT_XLSX_FILE, prepare_data
 from src.train import train
 from src.predict import predict_from_file, predict_texts
 
@@ -34,6 +46,34 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog=__doc__,
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # ── prepare ────────────────────────────────────────────────────────────────
+    prepare_parser = subparsers.add_parser(
+        "prepare",
+        help="Convert raw Excel review data into train/test CSV files",
+    )
+    prepare_parser.add_argument(
+        "--xlsx",
+        default=DEFAULT_XLSX_FILE,
+        help=f"Path to the raw Excel file (default: {DEFAULT_XLSX_FILE})",
+    )
+    prepare_parser.add_argument(
+        "--output-dir",
+        default=config.DATA_DIR,
+        help=f"Directory to write train.csv and test.csv (default: {config.DATA_DIR})",
+    )
+    prepare_parser.add_argument(
+        "--test-split",
+        type=float,
+        default=config.TEST_SPLIT,
+        help=f"Fraction of data to reserve as test set (default: {config.TEST_SPLIT})",
+    )
+    prepare_parser.add_argument(
+        "--seed",
+        type=int,
+        default=config.RANDOM_SEED,
+        help=f"Random seed for reproducible splitting (default: {config.RANDOM_SEED})",
+    )
 
     # ── train ──────────────────────────────────────────────────────────────────
     train_parser = subparsers.add_parser("train", help="Fine-tune BERT on labeled reviews")
@@ -64,6 +104,24 @@ def _build_parser() -> argparse.ArgumentParser:
     predict_parser.add_argument("--output", default=None, help="Path to save results CSV (optional)")
     predict_parser.add_argument("--batch-size", type=int, default=config.EVAL_BATCH_SIZE)
 
+    # ── evaluate ───────────────────────────────────────────────────────────────
+    evaluate_parser = subparsers.add_parser(
+        "evaluate",
+        help="Run prediction on the test set and display evaluation metrics",
+    )
+    evaluate_parser.add_argument(
+        "--data",
+        default=config.DEFAULT_TEST_FILE,
+        help=f"Path to test CSV with 'review' and 'label' columns (default: {config.DEFAULT_TEST_FILE})",
+    )
+    evaluate_parser.add_argument(
+        "--model",
+        default=config.MODEL_DIR,
+        help=f"Directory of fine-tuned BERT model (default: {config.MODEL_DIR})",
+    )
+    evaluate_parser.add_argument("--output", default=None, help="Path to save results CSV (optional)")
+    evaluate_parser.add_argument("--batch-size", type=int, default=config.EVAL_BATCH_SIZE)
+
     return parser
 
 
@@ -71,7 +129,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    if args.command == "train":
+    if args.command == "prepare":
+        prepare_data(
+            xlsx_file=args.xlsx,
+            output_dir=args.output_dir,
+            test_split=args.test_split,
+            seed=args.seed,
+        )
+
+    elif args.command == "train":
         train(
             data_file=args.data,
             save_dir=args.save_dir,
@@ -90,6 +156,14 @@ def main(argv: list[str] | None = None) -> int:
                 output_file=args.output,
                 batch_size=args.batch_size,
             )
+
+    elif args.command == "evaluate":
+        predict_from_file(
+            data_file=args.data,
+            model_dir=args.model,
+            output_file=args.output,
+            batch_size=args.batch_size,
+        )
 
     return 0
 
